@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Oculus(WebXR) — 자동 융합 + 검은 배경 키잉 + 메탈릭/FHD & 흑백/틴트 교대</title>
+<title>Oculus(WebXR) v3 — 실행 버튼만으로 자동 적용+융합</title>
 <style>
   html, body { margin:0; height:100%; background:#000; color:#e9e9e9; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
   canvas { display:block; }
@@ -13,17 +13,17 @@
   #dock .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0; }
   #dock .section { margin: 8px 0; padding-bottom: 8px; border-bottom: 1px dashed #3f3f3f; }
   #dock summary { cursor:pointer; font-weight:700; }
-  #dock .btn { padding:6px 10px; border:1px solid #666; background:#2c2c2c; border-radius:8px; cursor:pointer; color:#f0f0f0; }
+  #dock .btn { padding:9px 12px; border:1px solid #666; background:#2c2c2c; border-radius:10px; cursor:pointer; color:#f0f0f0; }
   #dock label, #dock span, #dock input, #dock select { color:#f0f0f0; }
   .tag { padding:2px 6px; border:1px solid #666; border-radius:8px; background:#1f1f1f; color:#fafafa; font-size:12px }
   .help { opacity:.85; font-size:13px; }
-  .prog { height:8px; background:#2a2a2a; border-radius:6px; overflow:hidden; width: 260px; border:1px solid #444; }
+  .prog { height:10px; background:#2a2a2a; border-radius:6px; overflow:hidden; width: 280px; border:1px solid #444; }
   .prog > i { display:block; height:100%; background:linear-gradient(90deg,#7ebaff,#4ad6ff); width:0%; transition: width .12s linear; }
   #toast { position: fixed; left:50%; transform:translateX(-50%); bottom: 18px; z-index: 10002;
            background: rgba(15,15,20,.95); color:#fff; padding:10px 14px; border-radius:10px; border:1px solid #444; display:none; }
   .filewrap { position: relative; display:inline-block; }
   .filewrap input[type=file] { position:absolute; inset:0; opacity:0.01; cursor:pointer; }
-  .filewrap .fakebtn { padding:6px 10px; border:1px solid #666; background:#2c2c2c; border-radius:8px; cursor:pointer; display:inline-block; color:#f0f0f0; }
+  .filewrap .fakebtn { padding:9px 12px; border:1px solid #666; background:#2c2c2c; border-radius:10px; cursor:pointer; display:inline-block; color:#f0f0f0; }
   #overlay { position:fixed; inset:0; background:rgba(0,0,0,.72); z-index:10001; display:none; }
   #panel { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:min(980px,96vw); max-height:82vh; overflow:auto;
            background:#141414; color:#f0f0f0; border:1px solid #444; border-radius:14px; padding:12px; }
@@ -31,6 +31,7 @@
   .dropzone.highlight { border-color:#9cf; background:rgba(100,150,255,.08); }
   .col2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
   .box { border:1px solid #333; border-radius:10px; padding:10px; }
+  .warn { position:fixed; left:10px; top:10px; z-index:10002; background:#2a0000; color:#fff; padding:8px 10px; border:1px solid #550; border-radius:8px; display:none; }
 </style>
 <script type="importmap">
 { "imports": {
@@ -40,9 +41,12 @@
 </script>
 </head>
 <body>
+<div id="secureWarn" class="warn">XR 비활성: https 또는 localhost가 아니면 VR 진입이 차단됩니다.</div>
+<div id="toast"></div>
+
 <div id="dock">
   <div class="row" style="justify-content:space-between">
-    <strong>오큘러스(WebXR) 합성 패널</strong>
+    <strong>오큘러스(WebXR) 합성 패널 v3</strong>
     <div>
       <button class="btn" id="btnUpload">업로드</button>
       <button class="btn" id="btnHide">F1 숨김</button>
@@ -52,11 +56,11 @@
   <details class="section" open>
     <summary>실행</summary>
     <div class="row">
-      <button class="btn" id="runAuto">실행 ▶ 자동 수평/수직 융합 + 검은 배경 키잉</button>
+      <button class="btn" id="runAuto">실행 ▶ (적용 없이) 자동 수평/수직 융합 + 검은 배경 키잉</button>
       <span id="runStatus" class="tag">대기</span>
       <div class="prog"><i id="progbar"></i></div>
     </div>
-    <div class="help">※ 실행을 누르면 업로드 패널이 닫히고 자동 분석→정렬→합성까지 수행됩니다.</div>
+    <div class="help">이제 “적용/미리보기”를 누르지 않아도 됩니다. 업로드만 했다면 실행이 자동으로 적용합니다.</div>
   </details>
 
   <details class="section" open>
@@ -134,11 +138,10 @@
         <div><button class="btn" id="runAuto2">실행 ▶ 자동 수평/수직 융합 + 자동 키잉</button><span id="runStatus2" class="tag">대기</span></div>
         <div class="prog"><i id="progbar2"></i></div>
       </div>
+      <div class="help">※ 이 버튼도 동일한 실행입니다. 적용 없이 바로 동작.</div>
     </div>
   </div>
 </div>
-
-<div id="toast"></div>
 
 <script type="module">
 import * as THREE from 'three';
@@ -148,22 +151,12 @@ function toast(msg, ms=1800){ const t=document.getElementById('toast'); t.textCo
 const progbar = document.getElementById('progbar'); const progbar2 = document.getElementById('progbar2');
 function setProgress(v){ const w=(Math.round(v*100))+'%'; if(progbar) progbar.style.width=w; if(progbar2) progbar2.style.width=w; }
 
-// ---- THREE + XR ----\n
-const banner = document.createElement('div');
-banner.style.cssText = 'position:fixed;left:10px;top:10px;z-index:10001;background:#2a0000;color:#fff;padding:8px 10px;border:1px solid #550; border-radius:8px; display:none;';
-banner.id='secureWarn';
-banner.textContent='XR 비활성: 이 페이지는 보안 컨텍스트(https 또는 localhost)가 아니라서 VR 진입이 차단됩니다.';
-document.body.appendChild(banner);
+// Secure context warn
 if(!window.isSecureContext){
-  banner.style.display='block';
-}
-if(!('xr' in navigator)){
-  const b2 = document.createElement('div');
-  b2.style.cssText = 'position:fixed;left:10px;top:54px;z-index:10001;background:#2a0000;color:#fff;padding:8px 10px;border:1px solid #550; border-radius:8px;';
-  b2.textContent='이 브라우저는 WebXR을 지원하지 않습니다.';
-  document.body.appendChild(b2);
+  const w=document.getElementById('secureWarn'); w.style.display='block';
 }
 
+// ---- THREE + XR ----
 const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'low-power' });
 renderer.xr.enabled = true;
 renderer.setPixelRatio(1.0);
@@ -176,25 +169,22 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHei
 camera.position.set(0,1.45,1.6);
 scene.add(new THREE.HemisphereLight(0xffffff,0x222233,0.7));
 
-// Two layers: Left=1, Right=2
 const leftGroup = new THREE.Group();  leftGroup.layers.set(1);
 const rightGroup= new THREE.Group();  rightGroup.layers.set(2);
 scene.add(leftGroup, rightGroup);
 
-// Plane + shader per eye
 const vsh = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `;
 const fsh = `
 uniform sampler2D uTex;
 uniform vec2  uOffset;
-uniform float uMetal;    // 1.0 if metallic on
-uniform float uStrength; // metallic strength
-uniform float uGray;     // 1.0 if grayscale on
-uniform float uTintOn;   // 1.0 if tint on
-uniform vec3  uTint;     // tint color multipliers
-uniform float uEdge;     // edge guard in px
-uniform float uKey;      // black key threshold (0..~3)
+uniform float uMetal;
+uniform float uStrength;
+uniform float uGray;
+uniform float uTintOn;
+uniform vec3  uTint;
+uniform float uEdge;
+uniform float uKey;
 varying vec2 vUv;
-
 vec3 sat(vec3 c, float s){ float l=dot(c, vec3(0.2126,0.7152,0.0722)); return mix(vec3(l), c, s); }
 vec3 toneMetal(vec3 c, float k){
   vec3 h = pow(c, vec3(mix(1.0, 0.65, k)));
@@ -203,7 +193,6 @@ vec3 toneMetal(vec3 c, float k){
   float sheen = smoothstep(0.65, 0.15, r) * (0.10 + 0.25*k);
   return h * cool + sheen;
 }
-
 void main(){
   vec2 uv = vUv + uOffset;
   vec2 texSize = vec2(textureSize(uTex, 0));
@@ -211,14 +200,9 @@ void main(){
   vec2 uvSafe = clamp(uv, px, 1.0 - px);
   vec4 s = texture2D(uTex, uvSafe);
   vec3 c = s.rgb;
-
-  // FHD base (slightly crisper)
   vec3 fhd = sat((c-0.5)*1.1+0.5, 1.0);
-  // Metallic
   vec3 met = toneMetal( fhd, 1.0 );
   vec3 col = mix(fhd, met, clamp(uMetal*uStrength, 0.0, 2.0));
-
-  // Grayscale / Tint
   if(uGray>0.5){
     float l = dot(col, vec3(0.2126,0.7152,0.0722));
     col = vec3(l);
@@ -226,8 +210,6 @@ void main(){
   if(uTintOn>0.5){
     col = clamp(col * uTint, 0.0, 1.0);
   }
-
-  // Black key by luminance sum
   float lum = dot(s.rgb, vec3(1.0));
   float key = smoothstep(uKey*1.2, uKey*0.8, lum);
   gl_FragColor = vec4(col, key);
@@ -249,7 +231,7 @@ function makePlane(){
 const imgLeft  = makePlane(); imgLeft.layers.set(1);  imgLeft.position.set(-0.42,1.45,-1.25); leftGroup.add(imgLeft);
 const imgRight = makePlane(); imgRight.layers.set(2); imgRight.position.set( 0.42,1.45,-1.25); rightGroup.add(imgRight);
 
-// ---- State & UI ----
+// ---- State & helpers ----
 let fuseHX=0, fuseVY=0;
 let imagesL=[], imagesR=[]; let texL=null, texR=null;
 let altOn=true, altHold=3000, altPhase=false, altTimer=null;
@@ -259,12 +241,13 @@ let keyThresh=48, previewNoKey=true;
 
 const TINTS = { green:[0.7,1.6,0.7], pink:[1.4,0.8,1.4], violet:[1.0,0.7,1.6], orange:[1.6,1.0,0.6], yellow:[1.6,1.6,0.6], cyan:[0.8,1.2,1.6], magenta:[1.4,0.7,1.4], red:[1.6,0.7,0.7], teal:[0.7,1.2,1.2], blue:[0.7,0.8,1.6] };
 
+function latest(arr){ return arr && arr.length ? arr[arr.length-1] : null; }
 function applyFusion(){
   const w = renderer.domElement.width, h = renderer.domElement.height;
   const ox = fuseHX / Math.max(1,w);
   const oy = fuseVY / Math.max(1,h);
-  if(imgLeft.material?.uniforms?.uOffset){ imgLeft.material.uniforms.uOffset.value.set( ox, oy); }
-  if(imgRight.material?.uniforms?.uOffset){ imgRight.material.uniforms.uOffset.value.set(-ox,-oy); }
+  imgLeft.material.uniforms.uOffset.value.set( ox, oy);
+  imgRight.material.uniforms.uOffset.value.set(-ox,-oy);
 }
 function applyVisuals(){
   const tint = TINTS[debugTintColor] || TINTS.green;
@@ -272,9 +255,8 @@ function applyVisuals(){
     const u = m.material.uniforms;
     u.uStrength.value = metalStrength;
     u.uTint.value.set(tint[0],tint[1],tint[2]);
-    u.uKey.value = keyThresh/255.0; // map 0..96 → shader 0..approx
+    u.uKey.value = keyThresh/255.0;
   });
-
   const leftIsMetal = modeMetal ? (!altPhase) : false;
   const rightIsMetal= modeMetal ? ( altPhase) : false;
   const leftIsTint  = (modeTint && debugTint) ? (!altPhase) : false;
@@ -290,8 +272,6 @@ function applyVisuals(){
     imgLeft.material.uniforms.uGray.value = leftIsGray?1.0:0.0;
     imgRight.material.uniforms.uGray.value= rightIsGray?1.0:0.0;
   }else{
-    // Region-based: split UV.x < 0.5 vs >= 0.5 by making two planes per eye?
-    // Simpler: approximate per-eye equivalent (most XR viewing uses per-eye anyway)
     imgLeft.material.uniforms.uMetal.value = leftIsMetal ? 1.0 : 0.0;
     imgRight.material.uniforms.uMetal.value= rightIsMetal? 1.0 : 0.0;
     imgLeft.material.uniforms.uTintOn.value = leftIsTint?1.0:0.0;
@@ -299,14 +279,11 @@ function applyVisuals(){
     imgLeft.material.uniforms.uGray.value = leftIsGray?1.0:0.0;
     imgRight.material.uniforms.uGray.value= rightIsGray?1.0:0.0;
   }
-
-  imgLeft.material.needsUpdate = true;
-  imgRight.material.needsUpdate = true;
+  imgLeft.material.needsUpdate = true; imgRight.material.needsUpdate = true;
 }
-
 function startAlt(){ if(altTimer) clearInterval(altTimer); if(!altOn) return; altTimer=setInterval(()=>{ altPhase=!altPhase; applyVisuals(); }, altHold); }
 
-// ---- Upload UI ----
+// ---- Upload handling ----
 const overlay = document.getElementById('overlay');
 document.getElementById('btnUpload').addEventListener('click', ()=> overlay.style.display='block');
 document.getElementById('btnCloseUpload').addEventListener('click', ()=> overlay.style.display='none');
@@ -339,21 +316,21 @@ async function loadTexture(url){
     }, undefined, reject);
   });
 }
-async function applySide(side){
+async function applyLatest(side){
   if(side==='L'){
-    if(!imagesL.length) return toast('좌안 이미지가 없습니다');
-    texL = await loadTexture(imagesL[0].url);
-    imgLeft.material.uniforms.uTex.value = texL; imgLeft.visible = true; toast('좌안 적용');
+    const item = latest(imagesL); if(!item) return null;
+    const tex = await loadTexture(item.url);
+    imgLeft.material.uniforms.uTex.value = tex; imgLeft.visible = true; texL = tex; return tex;
   }else{
-    if(!imagesR.length) return toast('우안 이미지가 없습니다');
-    texR = await loadTexture(imagesR[0].url);
-    imgRight.material.uniforms.uTex.value = texR; imgRight.visible = true; toast('우안 적용');
+    const item = latest(imagesR); if(!item) return null;
+    const tex = await loadTexture(item.url);
+    imgRight.material.uniforms.uTex.value = tex; imgRight.visible = true; texR = tex; return tex;
   }
 }
-document.getElementById('applyImagesL').addEventListener('click', ()=> applySide('L'));
-document.getElementById('applyImagesR').addEventListener('click', ()=> applySide('R'));
+document.getElementById('applyImagesL').addEventListener('click', ()=> applyLatest('L').then(()=>toast('좌안 적용')));
+document.getElementById('applyImagesR').addEventListener('click', ()=> applyLatest('R').then(()=>toast('우안 적용')));
 
-// ---- Auto Fuse (like PC, using HTMLImageElement from textures) ----
+// ---- Auto fuse with auto-apply on RUN ----
 function toMask(img, wTarget){
   const w = wTarget, h = Math.round(img.height * (w / img.width));
   const c = document.createElement('canvas'); c.width=w; c.height=h;
@@ -369,8 +346,7 @@ function toMask(img, wTarget){
 }
 function timeout(ms){ return new Promise(r=> setTimeout(r, ms)); }
 async function scoreXorAsync(mA, mB, dx, dy){
-  const w = mA.w, h = mA.h;
-  let xor=0, overlap=0;
+  const w = mA.w, h = mA.h; let xor=0, overlap=0;
   for(let y=0;y<h;y++){
     const y2 = y+dy;
     if(y2>=0 && y2<h){
@@ -404,17 +380,19 @@ async function searchBestAsync(imgA, imgB, onProgress){
   return best;
 }
 
-async function ensureApplied(){
-  if(!texL && imagesL.length){ await applySide('L'); }
-  if(!texR && imagesR.length){ await applySide('R'); }
+async function ensureAppliedForRun(){
+  // Auto-apply most recent uploads if textures not ready
+  if(!texL){ await applyLatest('L'); }
+  if(!texR){ await applyLatest('R'); }
 }
-
 async function runAuto(){
   document.getElementById('overlay').style.display='none';
   document.getElementById('runStatus').textContent='준비 중…'; setProgress(0.02);
-  await ensureApplied();
-  if(!texL || !texR){ document.getElementById('runStatus').textContent='좌/우 이미지를 먼저 추가'; toast('좌/우 이미지를 먼저 추가하세요'); return; }
-  // Turn off key temporarily if requested
+  await ensureAppliedForRun();
+  if(!texL || !texR){
+    document.getElementById('runStatus').textContent='좌/우 이미지를 먼저 업로드하세요';
+    toast('좌/우 이미지를 먼저 업로드하세요'); return;
+  }
   const saveKey = keyThresh;
   const tmpNoKey = document.getElementById('previewNoKey').checked;
   if(tmpNoKey){ keyThresh = 0; applyVisuals(); }
@@ -427,8 +405,7 @@ async function runAuto(){
   applyFusion();
   if(tmpNoKey){ keyThresh = saveKey; applyVisuals(); }
   document.getElementById('runStatus').textContent = `완료: H ${best.dx} · V ${best.dy}`; setProgress(1);
-  startAlt();
-  toast('합성 완료');
+  startAlt(); toast('합성 완료');
 }
 document.getElementById('runAuto').addEventListener('click', runAuto);
 document.getElementById('runAuto2').addEventListener('click', runAuto);
