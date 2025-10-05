@@ -148,10 +148,25 @@ function toast(msg, ms=1800){ const t=document.getElementById('toast'); t.textCo
 const progbar = document.getElementById('progbar'); const progbar2 = document.getElementById('progbar2');
 function setProgress(v){ const w=(Math.round(v*100))+'%'; if(progbar) progbar.style.width=w; if(progbar2) progbar2.style.width=w; }
 
-// ---- THREE + XR ----
-const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+// ---- THREE + XR ----\n
+const banner = document.createElement('div');
+banner.style.cssText = 'position:fixed;left:10px;top:10px;z-index:10001;background:#2a0000;color:#fff;padding:8px 10px;border:1px solid #550; border-radius:8px; display:none;';
+banner.id='secureWarn';
+banner.textContent='XR 비활성: 이 페이지는 보안 컨텍스트(https 또는 localhost)가 아니라서 VR 진입이 차단됩니다.';
+document.body.appendChild(banner);
+if(!window.isSecureContext){
+  banner.style.display='block';
+}
+if(!('xr' in navigator)){
+  const b2 = document.createElement('div');
+  b2.style.cssText = 'position:fixed;left:10px;top:54px;z-index:10001;background:#2a0000;color:#fff;padding:8px 10px;border:1px solid #550; border-radius:8px;';
+  b2.textContent='이 브라우저는 WebXR을 지원하지 않습니다.';
+  document.body.appendChild(b2);
+}
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'low-power' });
 renderer.xr.enabled = true;
-renderer.setPixelRatio(Math.min(1.5, devicePixelRatio));
+renderer.setPixelRatio(1.0);
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
