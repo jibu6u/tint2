@@ -101,6 +101,26 @@
       </select>
     </div>
   </details>
+
+  <details class="section" open>
+    <summary>VR 공간 애니메이션</summary>
+    <div class="row">
+      <label><input type="checkbox" id="enableApexAnimation" checked> Apex 거리 자동 변화 (1~3m)</label>
+      <label><input type="checkbox" id="enableStarAnimation" checked> 7각 별 애니메이션</label>
+    </div>
+    <div class="row">
+      <label>Apex 변화 주기</label>
+      <input id="apexChangeSpeed" type="range" min="1" max="10" step="0.5" value="3"><span id="apexChangeSpeedVal">3.0초</span>
+      <label>별 변화 주기</label>
+      <input id="starChangeSpeed" type="range" min="1" max="10" step="0.5" value="4"><span id="starChangeSpeedVal">4.0초</span>
+    </div>
+    <div class="row">
+      <label>현재 Apex 거리</label>
+      <span id="currentApexDistance" class="tag">1.6m</span>
+      <label>별 스케일</label>
+      <span id="currentStarScale" class="tag">1.0x</span>
+    </div>
+  </details>
 </div>
 
 <div id="overlay">
@@ -168,6 +188,59 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 50);
 camera.position.set(0,1.45,1.6);
 scene.add(new THREE.HemisphereLight(0xffffff,0x222233,0.7));
+
+// ---- VR 공간 애니메이션 추가 ----
+// 7각 별 형태의 공간 애니메이션
+const starGroup = new THREE.Group();
+scene.add(starGroup);
+
+// 7각 별 생성
+function create7PointStar() {
+  const starGeometry = new THREE.BufferGeometry();
+  const vertices = [];
+  const colors = [];
+  
+  // 7각 별의 점들 생성
+  for (let i = 0; i < 7; i++) {
+    const angle = (i / 7) * Math.PI * 2;
+    const x = Math.cos(angle) * 2;
+    const z = Math.sin(angle) * 2;
+    vertices.push(x, 0, z);
+    
+    // 각 점마다 다른 색상
+    const hue = i / 7;
+    const color = new THREE.Color().setHSL(hue, 0.8, 0.6);
+    colors.push(color.r, color.g, color.b);
+  }
+  
+  starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  starGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  
+  const starMaterial = new THREE.PointsMaterial({
+    size: 0.1,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.8
+  });
+  
+  return new THREE.Points(starGeometry, starMaterial);
+}
+
+// 7각 별 생성 및 추가
+const star7 = create7PointStar();
+starGroup.add(star7);
+
+// 랜덤 apex 거리 변화 (1미터~3미터)
+let apexDistance = 1.6;
+let targetApexDistance = 1.6;
+let apexChangeTimer = 0;
+const apexChangeInterval = 3000; // 3초마다 변화
+
+// 7각 별 애니메이션 변수
+let starScale = 1.0;
+let targetStarScale = 1.0;
+let starChangeTimer = 0;
+const starChangeInterval = 4000; // 4초마다 변화
 
 const leftGroup = new THREE.Group();  leftGroup.layers.set(1);
 const rightGroup= new THREE.Group();  rightGroup.layers.set(2);
@@ -428,19 +501,95 @@ document.getElementById('metalStrength').addEventListener('input', e=>{ metalStr
 document.getElementById('debugTint').addEventListener('change', e=>{ debugTint=e.target.checked; applyVisuals(); });
 document.getElementById('debugTintColor').addEventListener('change', e=>{ debugTintColor=e.target.value; applyVisuals(); });
 
+// ---- VR 공간 애니메이션 컨트롤 ----
+let enableApexAnimation = true;
+let enableStarAnimation = true;
+
+document.getElementById('enableApexAnimation').addEventListener('change', e=>{ 
+  enableApexAnimation = e.target.checked; 
+  if (!enableApexAnimation) {
+    apexDistance = 1.6;
+    targetApexDistance = 1.6;
+    camera.position.z = apexDistance;
+  }
+});
+
+document.getElementById('enableStarAnimation').addEventListener('change', e=>{ 
+  enableStarAnimation = e.target.checked; 
+  if (!enableStarAnimation) {
+    starScale = 1.0;
+    targetStarScale = 1.0;
+    starGroup.scale.setScalar(starScale);
+  }
+});
+
+document.getElementById('apexChangeSpeed').addEventListener('input', e=>{ 
+  apexChangeInterval = Number(e.target.value) * 1000; 
+  document.getElementById('apexChangeSpeedVal').textContent = e.target.value + '초';
+});
+
+document.getElementById('starChangeSpeed').addEventListener('input', e=>{ 
+  starChangeInterval = Number(e.target.value) * 1000; 
+  document.getElementById('starChangeSpeedVal').textContent = e.target.value + '초';
+});
+
 document.getElementById('btnHide').addEventListener('click', ()=>{ const d=document.getElementById('dock'); d.style.display = (d.style.display==='none'?'':'none'); });
 document.addEventListener('keydown', e=>{ if(e.key==='F1'){ e.preventDefault(); const d=document.getElementById('dock'); d.style.display = (d.style.display==='none'?'':'none'); }});
 
 // ---- Resize & XR camera layers ----
 function onResize(){ renderer.setSize(window.innerWidth, window.innerHeight); camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); }
 window.addEventListener('resize', onResize);
-renderer.setAnimationLoop(()=>{
+renderer.setAnimationLoop((time)=>{
   const xrCam = renderer.xr.getCamera(camera);
   if(xrCam && xrCam.isArrayCamera && xrCam.cameras?.length>=2){
     const camL = xrCam.cameras[0]; const camR = xrCam.cameras[1];
     camL.layers.enable(1); camL.layers.disable(2);
     camR.layers.enable(2); camR.layers.disable(1);
   }
+  
+  // ---- VR 공간 애니메이션 업데이트 ----
+  const deltaTime = 16; // 대략적인 프레임 시간 (60fps 기준)
+  
+  // 1. 랜덤 apex 거리 변화 (1미터~3미터)
+  if (enableApexAnimation) {
+    apexChangeTimer += deltaTime;
+    if (apexChangeTimer >= apexChangeInterval) {
+      targetApexDistance = 1.0 + Math.random() * 2.0; // 1.0 ~ 3.0
+      apexChangeTimer = 0;
+    }
+    
+    // 부드러운 거리 변화
+    apexDistance += (targetApexDistance - apexDistance) * 0.02;
+    
+    // 카메라 위치 업데이트 (Z축 거리 조절)
+    camera.position.z = apexDistance;
+  }
+  
+  // 2. 7각 별 애니메이션 (멀어졌다 가까워졌다)
+  if (enableStarAnimation) {
+    starChangeTimer += deltaTime;
+    if (starChangeTimer >= starChangeInterval) {
+      targetStarScale = 0.3 + Math.random() * 1.4; // 0.3 ~ 1.7
+      starChangeTimer = 0;
+    }
+    
+    // 부드러운 스케일 변화
+    starScale += (targetStarScale - starScale) * 0.015;
+    starGroup.scale.setScalar(starScale);
+    
+    // 7각 별 회전
+    starGroup.rotation.y += 0.005;
+    
+    // 7각 별을 카메라 정면에 배치
+    const camForward = new THREE.Vector3();
+    camera.getWorldDirection(camForward);
+    starGroup.position.copy(camera.position).add(camForward.multiplyScalar(2.5));
+  }
+  
+  // UI 업데이트
+  document.getElementById('currentApexDistance').textContent = apexDistance.toFixed(1) + 'm';
+  document.getElementById('currentStarScale').textContent = starScale.toFixed(1) + 'x';
+  
   renderer.render(scene, camera);
 });
 
